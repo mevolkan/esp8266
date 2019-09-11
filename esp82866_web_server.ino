@@ -209,8 +209,13 @@ void tempHumidity(){
 }
 
 void printResults(){
-  oled.setCursor(2, 58);
-  oled.print("DHT : "); oled.print(h); oled.print(" | "); oled.print(t);
+  
+oled.setCursor(1, 58);
+oled.print("DHT : "); oled.print(h); oled.print(" | "); oled.print(t);
+
+oled.setCursor(60,84);
+oled.print("I");
+
 }
 
 void loop(void) {
