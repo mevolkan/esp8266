@@ -61,7 +61,7 @@ const char index_html[] PROGMEM = R"rawliteral(
   </style>
 </head>
 <body>
-  <h2>Temperature and Relative Temperature/h2>
+  <h2>Temperature and Relative Temperature</h2>
   <br>
   DHT22
   <p>
@@ -170,8 +170,8 @@ void getTempHumidity()
     float t = dht.readTemperature();
     // Check if any reads failed and exit early (to try again).
     if (!(isnan(h) || isnan(t))) {
-      oled.setCursor(2, 58);
-      oled.print("DHT : "); oled.print(h); oled.print(" | "); oled.print(t);
+//      oled.setCursor(2, 58);
+//      oled.print("DHT : "); oled.print(h); oled.print(" | "); oled.print(t);
       Serial.print("DHT : "); Serial.print(h); Serial.print(" | "); Serial.println(t);
     }else{
       Serial.println("No Readings");
@@ -208,9 +208,15 @@ void tempHumidity(){
   }
 }
 
+void printResults(){
+  oled.setCursor(2, 58);
+  oled.print("DHT : "); oled.print(h); oled.print(" | "); oled.print(t);
+}
 
 void loop(void) {
  getTempHumidity();
  tempHumidity();
+
+ printResults();
  delay(10);
 }
