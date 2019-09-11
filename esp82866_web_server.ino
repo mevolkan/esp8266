@@ -213,8 +213,8 @@ void printResults(){
 oled.setCursor(1, 58);
 oled.print("DHT : "); oled.print(h); oled.print(" | "); oled.print(t);
 
-oled.setCursor(60,84);
-oled.print("I");
+//oled.setCursor(60,84);
+//oled.print("I");
 
 }
 
