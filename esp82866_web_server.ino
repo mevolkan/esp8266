@@ -10,8 +10,8 @@
 #include "DHT.h"
 
 // Replace with your network credentials
-const char* ssid = "AndroidAP_9875";
-const char* password = "Kales237";
+const char* ssid = "";
+const char* password = "";
 
 // 0X3C+SA0 - 0x3C or 0x3D
 #define I2C_ADDRESS 0x3C
