@@ -1,227 +1,209 @@
-// ESP8266 webserver
-
+#include <SPI.h>
 #include <Wire.h>
-#include "SSD1306Ascii.h"
-#include "SSD1306AsciiWire.h" 
+#include <Adafruit_SSD1306.h>
 #include <ESP8266WiFi.h>
-#include <Hash.h>
-#include <ESPAsyncTCP.h>
-#include <ESPAsyncWebServer.h>
+#include <PubSubClient.h>
 #include "DHT.h"
 
-// Replace with your network credentials
+// Uncomment one of the lines bellow for whatever DHT sensor type you're using!
+#define DHTTYPE DHT22   // DHT 11
+
+// Change the credentials below, so your ESP8266 connects to your router
 const char* ssid = "";
 const char* password = "";
 
-// 0X3C+SA0 - 0x3C or 0x3D
-#define I2C_ADDRESS 0x3C
+// Change the variable to your Raspberry Pi IP address, so it connects to your MQTT broker
+const char* mqtt_server = "";
 
-SSD1306AsciiWire oled;
+Adafruit_SSD1306 display(-1);
 
-#define DHTPIN 14
-#define DHTTYPE DHT22
-long int dht_millis = 0;
-DHT dht(DHTPIN, DHTTYPE);
+// Initializes the espClient. You should change the espClient name if you have multiple ESPs running in your home automation system
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+const int DHTPin = 14;
 
 
-// current temperature & humidity, updated in loop()
-float t = 0.0;
-float h = 0.0;
+const int lamp = 4;
 
-// Create AsyncWebServer object on port 80
-AsyncWebServer server(80);
+// Initialize DHT sensor.
+DHT dht(DHTPin, DHTTYPE);
 
-// Generally, you should use "unsigned long" for variables that hold time
-// The value will quickly become too large for an int to store
-unsigned long previousMillis = 0;    // will store last time DHT was updated
+// Timers auxiliar variables
+long now = millis();
+long lastMeasure = 0;
 
-// Updates DHT readings every 10 seconds
-const long interval = 10000;
-
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
-  <style>
-    html {
-     font-family: Arial;
-     display: inline-block;
-     margin: 0px auto;
-     text-align: center;
-    }
-    h2 { font-size: 3.0rem; }
-    p { font-size: 3.0rem; }
-    .units { font-size: 1.2rem; }
-    .dht-labels{
-      font-size: 1.5rem;
-      vertical-align:middle;
-      padding-bottom: 15px;
-    }
-  </style>
-</head>
-<body>
-  <h2>Temperature and Relative Temperature</h2>
-  <br>
-  DHT22
-  <p>
-    <i class="fas fa-thermometer-half" style="color:#059e8a;"></i> 
-    <span class="dht-labels">Temperature</span> 
-    <span id="temperature">%TEMPERATURE%</span>
-    <sup class="units">&deg;C</sup>
-  </p>
-  <p>
-    <i class="fas fa-tint" style="color:#00add6;"></i> 
-    <span class="dht-labels">Humidity</span>
-    <span id="humidity">%HUMIDITY%</span>
-    <sup class="units">%</sup>
-  </p>
-  LM35
-</body>
-<script>
-setInterval(function ( ) {
-  var xhttp = new XMLHttpRequest();
-  xhttp.onreadystatechange = function() {
-    if (this.readyState == 4 && this.status == 200) {
-      document.getElementById("temperature").innerHTML = this.responseText;
-    }
-  };
-  xhttp.open("GET", "/temperature", true);
-  xhttp.send();
-}, 10000 ) ;
-
-setInterval(function ( ) {
-  var xhttp = new XMLHttpRequest();
-  xhttp.onreadystatechange = function() {
-    if (this.readyState == 4 && this.status == 200) {
-      document.getElementById("humidity").innerHTML = this.responseText;
-    }
-  };
-  xhttp.open("GET", "/humidity", true);
-  xhttp.send();
-}, 10000 ) ;
-</script>
-</html>)rawliteral";
-
-// Replaces placeholder with DHT values
-String processor(const String& var){
-  //Serial.println(var);
-  if(var == "TEMPERATURE"){
-    return String(t);
-  }
-  else if(var == "HUMIDITY"){
-    return String(h);
-  }
-  return String();
-}
-
-void setup() {
-  //serial port for debugging purposes
+// Don't change the function below. This functions connects your ESP8266 to your router
+void setup_wifi() {
+  delay(10);
+  // We start by connecting to a WiFi network
+  
   Serial.begin(115200);
-  //Wire.pins(4, 5);
-  Wire.begin();         
-  oled.begin(&Adafruit128x64, I2C_ADDRESS);
-  oled.set400kHz();  
-  oled.setFont(Adafruit5x7);  
-
-  uint32_t m = micros();
-  oled.clear(); 
-  oled.set2X(); 
-  oled.println("  volkan");
-  oled.set1X();
-  oled.println("Temperature & Humidity\n");
-
-   // Connect to Wi-Fi
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
   WiFi.begin(ssid, password);
-  Serial.println("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println(".");
+    delay(500);
+    Serial.print(".");
   }
-
-  // Print ESP8266 Local IP Address
+  Serial.println("");
+  Serial.print("WiFi connected - ESP IP address: ");
   Serial.println(WiFi.localIP());
-
-  // Route for root / web page
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/html", index_html, processor);
-  });
-  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/plain", String(t).c_str());
-  });
-  server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/plain", String(h).c_str());
-  });
-
-  // Start server
-  server.begin();
-
-  dht.begin();
+}
+//display status on OLED
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3c); // initialize with the I2C addr 0x3D (for the 128x64)
+  display.display();
+  delay(4000);
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(15, 0);
+  display.println("VOLKAN");
+  display.display();
   delay(1000);
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(15, 0);
+  display.println("WiFi connected");
+  display.println("ESP IP address: ")
+  display.println(WiFi.localIP())
+  display.display();
+
+// This functions is executed when some device publishes a message to a topic that your ESP8266 is subscribed to
+// Change the function below to add logic to your program, so when a device publishes a message to a topic that 
+// your ESP8266 is subscribed you can actually do something
+void callback(String topic, byte* message, unsigned int length) {
+  Serial.print("Message arrived on topic: ");
+  Serial.print(topic);
+  Serial.print(". Message: ");
+  String messageTemp;
+  
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)message[i]);
+    messageTemp += (char)message[i];
+  }
+  Serial.println();
+
+  // Feel free to add more if statements to control more GPIOs with MQTT
+
+  // If a message is received on the topic room/lamp, you check if the message is either on or off. Turns the lamp GPIO according to the message
+  if(topic=="room/lamp"){
+      Serial.print("Changing Room lamp to ");
+      if(messageTemp == "on"){
+        digitalWrite(lamp, HIGH);
+        Serial.print("On");
+      }
+      else if(messageTemp == "off"){
+        digitalWrite(lamp, LOW);
+        Serial.print("Off");
+      }
+  }
+  Serial.println();
 }
 
-//get temp and humidity from dht11 sensor
-void getTempHumidity()
-{
-  if ((millis() - dht_millis) >= 2000)
-  {
+// This functions reconnects your ESP8266 to your MQTT broker
+// Change the function below if you want to subscribe to more topics with your ESP8266 
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    /*
+     YOU MIGHT NEED TO CHANGE THIS LINE, IF YOU'RE HAVING PROBLEMS WITH MQTT MULTIPLE CONNECTIONS
+     To change the ESP device ID, you will have to give a new name to the ESP8266.
+     Here's how it looks:
+       if (client.connect("ESP8266Client")) {
+     You can do it like this:
+       if (client.connect("ESP1_Office")) {
+     Then, for the other ESP:
+       if (client.connect("ESP2_Garage")) {
+      That should solve your MQTT multiple connections problem
+    */
+    if (client.connect("ESP8266Client")) {
+      Serial.println("connected");  
+      // Subscribe or resubscribe to a topic
+      // You can subscribe to more topics (to control more LEDs in this example)
+      client.subscribe("room/lamp");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
+// The setup function sets your ESP GPIOs to Outputs, starts the serial communication at a baud rate of 115200
+// Sets your mqtt broker and sets the callback function
+// The callback function is what receives messages and actually controls the LEDs
+void setup() {
+  pinMode(lamp, OUTPUT);
+  
+  dht.begin();
+  
+  Serial.begin(115200);
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+
+}
+
+// For this project, you don't need to change anything in the loop function. Basically it ensures that you ESP is connected to your broker
+void loop() {
+
+  if (!client.connected()) {
+    reconnect();
+  }
+  if(!client.loop())
+    client.connect("ESP8266Client");
+
+  now = millis();
+  // Publishes new temperature and humidity every 30 seconds
+  if (now - lastMeasure > 30000) {
+    lastMeasure = now;
+    // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
     float h = dht.readHumidity();
     // Read temperature as Celsius (the default)
     float t = dht.readTemperature();
-    // Check if any reads failed and exit early (to try again).
-    if (!(isnan(h) || isnan(t))) {
-//      oled.setCursor(2, 58);
-//      oled.print("DHT : "); oled.print(h); oled.print(" | "); oled.print(t);
-      Serial.print("DHT : "); Serial.print(h); Serial.print(" | "); Serial.println(t);
-    }else{
-      Serial.println("No Readings");
-    }
-    dht_millis = millis();
-  }
-}
-
-void tempHumidity(){  
-  unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= interval) {
-    // save the last time you updated the DHT values
-    previousMillis = currentMillis;
-    // Read temperature as Celsius (the default)
-    float newT = dht.readTemperature();
     // Read temperature as Fahrenheit (isFahrenheit = true)
-    //float newT = dht.readTemperature(true);
-    // if temperature read failed, don't change t value
-    if (isnan(newT)) {
+    float f = dht.readTemperature(true);
+
+    // Check if any reads failed and exit early (to try again).
+    if (isnan(h) || isnan(t) || isnan(f)) {
       Serial.println("Failed to read from DHT sensor!");
+      return;
     }
-    else {
-      t = newT;
-    }
-    // Read Humidity
-    float newH = dht.readHumidity();
-    // if humidity read failed, don't change h value 
-    if (isnan(newH)) {
-      Serial.println("Failed to read from DHT sensor!");
-    }
-    else {
-      h = newH;
-    }
+
+    // Computes temperature values in Celsius
+    float hic = dht.computeHeatIndex(t, h, false);
+    static char temperatureTemp[7];
+    dtostrf(hic, 6, 2, temperatureTemp);
+    
+    // Uncomment to compute temperature values in Fahrenheit 
+    // float hif = dht.computeHeatIndex(f, h);
+    // static char temperatureTemp[7];
+    // dtostrf(hic, 6, 2, temperatureTemp);
+    
+    static char humidityTemp[7];
+    dtostrf(h, 6, 2, humidityTemp);
+
+    // Publishes Temperature and Humidity values
+    client.publish("room/temperature", temperatureTemp);
+    client.publish("room/humidity", humidityTemp);
+    
+    Serial.print("Humidity: ");
+    Serial.print(h);
+    Serial.print(" %\t Temperature: ");
+    Serial.print(t);
+    Serial.print(" *C ");
+    Serial.print(f);
+    Serial.print(" *F\t Heat index: ");
+    Serial.print(hic);
+    Serial.println(" *C ");
+    // Serial.print(hif);
+    // Serial.println(" *F");
   }
-}
-
-void printResults(){
-  
-oled.setCursor(1, 58);
-oled.print("DHT : "); oled.print(h); oled.print(" | "); oled.print(t);
-
-//oled.setCursor(60,84);
-//oled.print("I");
-
-}
-
-void loop(void) {
- getTempHumidity();
- tempHumidity();
-
- printResults();
- delay(10);
-}
+} 

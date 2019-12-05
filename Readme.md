@@ -18,7 +18,7 @@ Warefab is an electronics kits and modules for education, makers and engineers. 
 You can also:
   - Add more sensors on the pinouts
   
-Currently at revision one
+Currently at revision 1
 
 
 ### Libraries used
@@ -38,6 +38,9 @@ This demo uses the following libaries
 
 Download the above libraries and place them in the libaries folder
 Download this repo and run the .ino file
+Flash to your Devkit, after changing the values accordingly
+Copy the contents in flow .txt to your nodered
+
 
 
 ### Development
@@ -48,7 +51,15 @@ Fork this repo, add changes and I will be sure to merge them, cheers
 - Utilise indexdb
 - Add grraphing using library and db above
 - Add function to add AP over the air
-- Add LM35 
+- Add LM35
+
+Deviated from the initial plan, hence this branch currently uses nodered and mqtt to transmit and plot the diagrams
+Therefore thre new #### Todos are
+- Display the temperature and humidity values on the screen
+- Display the reading directly via the ESP8266 on port 80
+- Hook the other 3 sensors
+- Fit them all together in a tiny transparent box
+
 
 License
 ----
